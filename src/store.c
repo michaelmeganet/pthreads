@@ -798,6 +798,33 @@ static inline int pthreads_store_remove_complex(zval *pzval) {
 } /* }}} */
 
 /* {{{ */
+static inline int pthreads_clone_complex(zval *pzval) {
+	switch (Z_TYPE_P(pzval)) {
+		case IS_ARRAY: {
+			HashTable *tmp = zend_array_dup(Z_ARRVAL_P(pzval));
+
+			zend_hash_apply(tmp, pthreads_clone_complex);
+
+			zval_ptr_dtor(pzval);
+
+			ZVAL_ARR(pzval, tmp);
+		} break;
+
+		case IS_OBJECT:
+			if (instanceof_function(Z_OBJCE_P(pzval), pthreads_threaded_entry))
+				break;
+
+			zend_object *tmp = zend_objects_clone_obj(pzval);
+
+			zval_ptr_dtor(pzval);
+
+			ZVAL_OBJ(pzval, tmp);
+	}
+
+	return ZEND_HASH_APPLY_KEEP;
+} /* }}} */
+
+/* {{{ */
 static int pthreads_store_tostring(zval *pzval, char **pstring, size_t *slength, zend_bool complex) {
 	int result = FAILURE;
 	if (pzval && (Z_TYPE_P(pzval) != IS_NULL)) {
@@ -807,13 +834,18 @@ static int pthreads_store_tostring(zval *pzval, char **pstring, size_t *slength,
 
 		memset(&smart, 0, sizeof(smart_str));
 
-		if (Z_TYPE_P(pzval) == IS_ARRAY && !complex) {
+		if (Z_TYPE_P(pzval) == IS_ARRAY) {
+
 			tmp = zend_array_dup(Z_ARRVAL_P(pzval));
 
 			ZVAL_ARR(&ztmp, tmp);
 			pzval = &ztmp;
 			
-			zend_hash_apply(tmp, pthreads_store_remove_complex);
+			if(complex) {
+				zend_hash_apply(tmp, pthreads_clone_complex);
+			} else {
+				zend_hash_apply(tmp, pthreads_store_remove_complex);
+			}
 		}
 
 		if ((Z_TYPE_P(pzval) != IS_OBJECT) ||
